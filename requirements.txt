@@ -1,0 +1,45 @@
+# =============================================================
+# ANALIZADOR LEGAL DE ACTAS CORPORATIVAS MEXICANAS
+# Dependencias de Python
+# =============================================================
+# Instalación:
+#   pip install -r requirements.txt
+#
+# Nota: Si tienes conflictos de entorno, usa:
+#   pip install -r requirements.txt --break-system-packages
+# =============================================================
+
+# ── Interfaz web (para app_web.py) ────────────────────────
+flask>=3.0.0
+
+# ── API de Anthropic (Claude) ──────────────────────────────
+anthropic>=0.34.0
+
+# ── Extracción de texto de PDFs ───────────────────────────
+PyMuPDF>=1.24.0
+
+# ── Conversión de PDF escaneado a imágenes ─────────────────
+# Requiere instalar Poppler en el sistema:
+#   Linux:  sudo apt install poppler-utils
+#   Mac:    brew install poppler
+#   Windows: descargar desde https://github.com/oschwartz10612/poppler-windows/releases
+pdf2image>=1.17.0
+
+# ── Procesamiento de archivos Word (.docx) ────────────────
+python-docx>=1.1.0
+
+# ── Manejo de datos y exportación a CSV/Excel ─────────────
+pandas>=2.2.0
+openpyxl>=3.1.0
+
+# ── Monitoreo de carpeta en tiempo real ───────────────────
+watchdog>=4.0.0
+
+# ── OCR como alternativa (opcional) ───────────────────────
+# Solo si quieres OCR local además de la visión de Claude
+# Requiere Tesseract instalado en el sistema:
+#   Linux:  sudo apt install tesseract-ocr tesseract-ocr-spa
+#   Mac:    brew install tesseract
+#   Windows: https://github.com/UB-Mannheim/tesseract/wiki
+# pytesseract>=0.3.10
+# Pillow>=10.0.0

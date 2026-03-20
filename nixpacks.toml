@@ -1,0 +1,11 @@
+# Configuración para Railway (nixpacks)
+# Instala Poppler para convertir PDFs escaneados a imágenes
+
+[phases.setup]
+nixPkgs = ["poppler_utils", "python311"]
+
+[phases.install]
+cmds = ["pip install -r requirements.txt"]
+
+[start]
+cmd = "python app_web.py"
