@@ -404,12 +404,16 @@ def html_principal(api_key_preconfigurada):
 
       <!-- Tab: Carpeta -->
       <div class="tab-panel" id="panel-batch">
-        <div class="drop-zone" id="dropBatch" onclick="document.getElementById('inputBatch').click()">
+        <div class="drop-zone" id="dropBatch" onclick="document.getElementById('inputBatch').click()" id="dropBatch"
+             ondragover="event.preventDefault();this.classList.add('drag')"
+             ondragleave="this.classList.remove('drag')"
+             ondrop="onDropCarpeta(event)">
           <div class="icon">📁</div>
-          <p>Selecciona una carpeta con tus actas</p>
-          <small>Se procesarán todos los PDF y DOCX de la carpeta</small>
+          <p>Haz clic para seleccionar una carpeta completa</p>
+          <small>Se detectarán automáticamente todos los PDF y DOCX dentro de la carpeta</small>
         </div>
-        <input type="file" id="inputBatch" accept=".pdf,.docx" multiple style="display:none" onchange="onBatchFiles(this)">
+        <input type="file" id="inputBatch" webkitdirectory mozdirectory directory multiple style="display:none" onchange="onBatchFiles(this)">
+        <div id="batchCount" style="display:none;margin-top:12px;padding:10px 14px;background:#e8f0fb;border-radius:8px;font-size:.88rem;color:#1F3864;font-weight:600"></div>
         <div class="file-list" id="batchList"></div>
       </div>
 
@@ -478,18 +482,37 @@ function setSingle(f) {
 }
 
 function onBatchFiles(inp) {
+  // Filtra solo PDF y DOCX de todos los archivos de la carpeta seleccionada
   archivosBatch = Array.from(inp.files).filter(f => /\.(pdf|docx)$/i.test(f.name));
   renderBatchList();
   checkReady();
 }
+
+function onDropCarpeta(event) {
+  event.preventDefault();
+  document.getElementById('dropBatch').classList.remove('drag');
+  // Drag & drop de archivos individuales (fallback)
+  const files = Array.from(event.dataTransfer.files).filter(f => /\.(pdf|docx)$/i.test(f.name));
+  if (files.length > 0) { archivosBatch = files; renderBatchList(); checkReady(); }
+}
+
 function renderBatchList() {
-  const el = document.getElementById('batchList');
-  el.innerHTML = archivosBatch.length === 0 ? '' :
-    archivosBatch.map(f => `<div class="file-item"><span class="fi">${f.name.endsWith('.pdf')?'📄':'📝'}</span><span>${f.name}</span><span style="margin-left:auto;color:#888;font-size:.8rem">${(f.size/1024/1024).toFixed(2)} MB</span></div>`).join('');
+  const countEl = document.getElementById('batchCount');
+  const listEl  = document.getElementById('batchList');
+  if (archivosBatch.length === 0) {
+    countEl.style.display = 'none'; listEl.innerHTML = ''; return;
+  }
+  const totalMB = archivosBatch.reduce((s,f) => s + f.size/1024/1024, 0).toFixed(2);
+  countEl.style.display = 'block';
+  countEl.innerHTML = `📁 ${archivosBatch.length} archivos encontrados en la carpeta &nbsp;·&nbsp; ${totalMB} MB en total`;
+  listEl.innerHTML = archivosBatch.map(f =>
+    `<div class="file-item"><span class="fi">${f.name.endsWith('.pdf')?'📄':'📝'}</span>` +
+    `<span>${f.name}</span>` +
+    `<span style="margin-left:auto;color:#888;font-size:.8rem">${(f.size/1024/1024).toFixed(2)} MB</span></div>`
+  ).join('');
 }
 
 function getApiKey() {
-  if (!API_KEY_ENV) return '';
   const inp = document.getElementById('apiKeyInput');
   return inp ? inp.value.trim() : '';
 }
