@@ -13,8 +13,8 @@
 flask>=3.0.0
 gunicorn>=21.2.0
 
-# ── API de Anthropic (Claude) ──────────────────────────────
-anthropic>=0.34.0
+# ── API de Google Gemini ──────────────────────────────────
+google-generativeai>=0.8.0
 
 # ── Extracción de texto de PDFs ───────────────────────────
 PyMuPDF>=1.24.0

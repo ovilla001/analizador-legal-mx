@@ -4,9 +4,9 @@ ANALIZADOR LEGAL — INTERFAZ WEB
 =============================================================================
 Ejecuta:  python app_web.py  |  Abre: http://localhost:5000
 Variables de entorno opcionales:
-  APP_PASSWORD     -> Contraseña de acceso (vacío = sin login)
-  SECRET_KEY       -> Clave de sesión Flask
-  ANTHROPIC_API_KEY -> Si se configura, el campo API Key se oculta en la web
+  APP_PASSWORD   -> Contraseña de acceso (vacío = sin login)
+  SECRET_KEY     -> Clave de sesión Flask
+  GEMINI_API_KEY -> Si se configura, el campo API Key se oculta en la web
 =============================================================================
 """
 
@@ -19,8 +19,9 @@ from flask import (Flask, request, jsonify, send_file,
 
 # ── Dependencias ─────────────────────────────────────────────────────────────
 FALTANTES = []
-try:    import anthropic
-except: FALTANTES.append("anthropic")
+try:
+    import google.generativeai as genai
+except: FALTANTES.append("google-generativeai")
 try:    import fitz
 except: FALTANTES.append("PyMuPDF")
 try:
@@ -48,9 +49,9 @@ app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 UPLOAD_DIR     = Path("uploads_web"); UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR     = Path("resultados_legales"); OUTPUT_DIR.mkdir(exist_ok=True)
 MAX_PAGINAS    = 30
-MODELO         = "claude-opus-4-6"
+MODELO         = "gemini-2.0-flash"
 APP_PASSWORD   = os.environ.get("APP_PASSWORD", "")
-API_KEY_ENV    = os.environ.get("ANTHROPIC_API_KEY", "")   # Si está, se oculta el campo en la web
+API_KEY_ENV    = os.environ.get("GEMINI_API_KEY", "")   # Si está, se oculta el campo en la web
 
 def login_required(f):
     @wraps(f)
@@ -107,8 +108,8 @@ def pdf_a_imagenes(ruta):
         tmp = UPLOAD_DIR / f"_tmp_{i}.png"
         p.save(str(tmp), "PNG")
         with open(tmp, "rb") as f:
-            imgs.append({"type":"image","source":{"type":"base64","media_type":"image/png",
-                         "data":base64.b64encode(f.read()).decode()}})
+            data = f.read()
+        imgs.append({"mime_type": "image/png", "data": base64.b64encode(data).decode()})
         tmp.unlink(missing_ok=True)
     return imgs
 
@@ -117,14 +118,18 @@ def extraer_texto_docx(ruta):
     doc = DocxDoc(str(ruta))
     return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
 
-def llamar_claude(cliente, texto="", imagenes=None):
-    if imagenes:
-        contenido = imagenes + [{"type":"text","text":"Analiza estas páginas del acta y genera la tabla Markdown con TODOS los campos obligatorios."}]
+def llamar_gemini(api_key, texto="", imagenes_bytes=None):
+    genai.configure(api_key=api_key)
+    modelo = genai.GenerativeModel(
+        model_name=MODELO,
+        system_instruction=SYSTEM_PROMPT
+    )
+    if imagenes_bytes:
+        partes = imagenes_bytes + ["Analiza estas páginas del acta y genera la tabla Markdown con TODOS los campos obligatorios."]
     else:
-        contenido = [{"type":"text","text":f"Analiza este documento legal y genera la tabla:\n\n---\n{texto[:150000]}\n---"}]
-    r = cliente.messages.create(model=MODELO, max_tokens=4096, system=SYSTEM_PROMPT,
-                                messages=[{"role":"user","content":contenido}])
-    return r.content[0].text
+        partes = [f"Analiza este documento legal y genera la tabla:\n\n---\n{texto[:150000]}\n---"]
+    r = modelo.generate_content(partes)
+    return r.text
 
 def parsear_tabla(md):
     filas = []
@@ -138,7 +143,7 @@ def parsear_tabla(md):
             filas.append({"cat":celdas[0],"dato":celdas[1],"obs":celdas[2] if len(celdas)>2 else ""})
     return filas
 
-def procesar_archivo(ruta, cliente):
+def procesar_archivo(ruta, api_key):
     ext = ruta.suffix.lower()
     texto, es_escaneo, imagenes = "", False, []
     if ext == ".pdf":
@@ -153,10 +158,16 @@ def procesar_archivo(ruta, cliente):
             raise ValueError("El DOCX está vacío o no se pudo leer.")
     else:
         raise ValueError(f"Formato no soportado: {ext}")
-    tabla_md = llamar_claude(cliente, texto=texto, imagenes=imagenes if es_escaneo else None)
+
+    # Gemini acepta imágenes como partes inline
+    imagenes_gemini = None
+    if es_escaneo and imagenes:
+        imagenes_gemini = [{"inline_data": img} for img in imagenes]
+
+    tabla_md = llamar_gemini(api_key, texto=texto, imagenes_bytes=imagenes_gemini)
     filas = parsear_tabla(tabla_md)
     if not filas:
-        raise ValueError("Claude no devolvió datos estructurados. Verifica la calidad del PDF.")
+        raise ValueError("Gemini no devolvió datos estructurados. Verifica la calidad del PDF.")
     tipo = next((f["dato"] for f in filas if "Tipo" in f["cat"]), "No identificado")
     return filas, tipo
 
@@ -405,8 +416,8 @@ def html_principal(api_key_preconfigurada):
       <!-- API Key -->
       """ + ("""<div class="api-ok">✅ API Key de Anthropic configurada en el servidor — puedes analizar directamente.</div>""" if api_key_preconfigurada else """
       <div class="api-row">
-        <label>🔑 Anthropic API Key</label>
-        <input type="password" id="apiKeyInput" placeholder="sk-ant-api03-XXXXXXXXXXXXXXXX" oninput="checkReady()">
+        <label>🔑 Google Gemini API Key</label>
+        <input type="password" id="apiKeyInput" placeholder="AIzaSy-XXXXXXXXXXXXXXXX" oninput="checkReady()">
       </div>""") + """
 
       <button class="primary" id="btnAnalizar" onclick="analizar()" disabled>🔍 Analizar Documento(s)</button>
@@ -485,7 +496,7 @@ function getApiKey() {
 
 function checkReady() {
   const tieneArchivos = modo==='single' ? !!archivoSingle : archivosBatch.length > 0;
-  const tieneKey = API_KEY_ENV ? (getApiKey().startsWith('sk-ant')) : true;
+  const tieneKey = API_KEY_ENV ? (getApiKey().startsWith('AIza') || getApiKey().length > 20) : true;
   document.getElementById('btnAnalizar').disabled = !(tieneArchivos && tieneKey);
 }
 
@@ -659,15 +670,14 @@ def analizar_endpoint():
     try:
         api_key = API_KEY_ENV or request.form.get("api_key","").strip()
         if not api_key:
-            return jsonify({"error":"Ingresa tu API Key de Anthropic para continuar."}), 400
+            return jsonify({"error":"Ingresa tu API Key de Google Gemini para continuar."}), 400
         f = request.files.get("file")
         if not f:
             return jsonify({"error":"No se recibió ningún archivo."}), 400
         nombre = f.filename
         ruta   = UPLOAD_DIR / nombre
         f.save(str(ruta))
-        cliente = anthropic.Anthropic(api_key=api_key)
-        filas, tipo = procesar_archivo(ruta, cliente)
+        filas, tipo = procesar_archivo(ruta, api_key)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         excel_path = guardar_excel_lote([{"nombre":nombre,"tipo":tipo,"filas":filas,
                                           "hoja":nombre[:28].replace("/","_")}], ts)
@@ -675,8 +685,6 @@ def analizar_endpoint():
         return jsonify({"filas":filas,"tipo":tipo,
                         "excel_url":f"/descargar/{excel_path.name}",
                         "csv_url":  f"/descargar/{csv_path.name}"})
-    except anthropic.AuthenticationError:
-        return jsonify({"error":"API Key inválida. Verifica tu clave en console.anthropic.com"}), 401
     except Exception as e:
         return jsonify({"error":str(e)}), 500
 
