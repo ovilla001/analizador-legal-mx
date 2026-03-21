@@ -288,6 +288,17 @@ def html_principal(api_key_preconfigurada):
   .badge{display:inline-block;background:#FFF2CC;color:#7B6000;border-radius:20px;padding:3px 12px;font-size:.76rem;font-weight:600;margin-top:7px}
   .logout{float:right;color:rgba(255,255,255,.7);font-size:.82rem;text-decoration:none;margin-top:4px}
   .logout:hover{color:#fff}
+  .btn-cfg{float:right;clear:right;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);color:#fff;padding:5px 14px;border-radius:20px;font-size:.8rem;cursor:pointer;margin-top:6px;transition:.2s}
+  .btn-cfg:hover{background:rgba(255,255,255,.28)}
+  .cfg-panel{display:none;background:#1a3260;border-top:1px solid rgba(255,255,255,.1);padding:16px 40px}
+  .cfg-panel.open{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .cfg-panel label{color:rgba(255,255,255,.85);font-size:.85rem;font-weight:600;white-space:nowrap}
+  .cfg-panel input{flex:1;min-width:260px;padding:9px 14px;border-radius:8px;border:none;font-size:.9rem;font-family:monospace;background:rgba(255,255,255,.12);color:#fff}
+  .cfg-panel input::placeholder{color:rgba(255,255,255,.4)}
+  .cfg-panel input:focus{outline:none;background:rgba(255,255,255,.2)}
+  .btn-save-cfg{padding:9px 22px;background:#2E75B6;color:#fff;border:none;border-radius:8px;font-weight:600;font-size:.88rem;cursor:pointer;white-space:nowrap}
+  .btn-save-cfg:hover{background:#1F5fa6}
+  .cfg-saved{color:#a8e6a3;font-size:.82rem;display:none;font-weight:600}
   main{max-width:980px;margin:32px auto;padding:0 20px}
   .card{background:#fff;border-radius:14px;box-shadow:0 2px 12px rgba(0,0,0,.08);margin-bottom:26px;overflow:hidden}
   .card-header{background:#1F3864;color:#fff;padding:15px 24px;font-size:.98rem;font-weight:600;display:flex;align-items:center;gap:8px}
@@ -363,10 +374,17 @@ def html_principal(api_key_preconfigurada):
 <body>
 <header>
   <a class="logout" href="/logout">Cerrar sesión</a>
+  <button class="btn-cfg" onclick="toggleConfig()">⚙️ Configuración</button>
   <h1>⚖️ Analizador Legal de Actas Corporativas</h1>
   <p>Derecho Corporativo Mexicano — Registro Maestro automático</p>
-  <span class="badge">🤖 Powered by Claude (Anthropic)</span>
+  <span class="badge" id="apiStatus">🔑 API Key no configurada</span>
 </header>
+<div class="cfg-panel" id="cfgPanel">
+  <label>🔑 Google Gemini API Key</label>
+  <input type="password" id="cfgApiKey" placeholder="AIzaSy-XXXXXXXXXXXXXXXX" oninput="document.getElementById('cfgSaved').style.display='none'">
+  <button class="btn-save-cfg" onclick="guardarApiKey()">💾 Guardar</button>
+  <span class="cfg-saved" id="cfgSaved">✅ ¡Guardada!</span>
+</div>
 
 <main>
   <div class="card">
@@ -417,11 +435,10 @@ def html_principal(api_key_preconfigurada):
         <div class="file-list" id="batchList"></div>
       </div>
 
-      <!-- API Key -->
-      """ + ("""<div class="api-ok">✅ API Key de Anthropic configurada en el servidor — puedes analizar directamente.</div>""" if api_key_preconfigurada else """
-      <div class="api-row">
-        <label>🔑 Google Gemini API Key</label>
-        <input type="password" id="apiKeyInput" placeholder="AIzaSy-XXXXXXXXXXXXXXXX" oninput="checkReady()">
+      <!-- API Key (oculta, se maneja desde Configuración) -->
+      """ + ("""<div class="api-ok">✅ API Key configurada en el servidor.</div>""" if api_key_preconfigurada else """
+      <div id="apiWarning" style="display:none;padding:10px 14px;background:#FFF8E1;border-left:4px solid #FFC107;border-radius:8px;font-size:.85rem;color:#7B6000;margin-top:14px">
+        ⚠️ Configura tu API Key con el botón <strong>⚙️ Configuración</strong> (arriba a la derecha) antes de analizar.
       </div>""") + """
 
       <button class="primary" id="btnAnalizar" onclick="analizar()" disabled>🔍 Analizar Documento(s)</button>
@@ -457,6 +474,46 @@ const API_KEY_ENV = """ + mostrar_api + """;
 let modo = 'single';
 let archivoSingle = null;
 let archivosBatch = [];
+
+// ── Config: guardar/leer API Key en localStorage ───────────────────────────
+function toggleConfig() {
+  const panel = document.getElementById('cfgPanel');
+  panel.classList.toggle('open');
+  if (panel.classList.contains('open')) {
+    const saved = localStorage.getItem('gemini_api_key') || '';
+    document.getElementById('cfgApiKey').value = saved;
+  }
+}
+function guardarApiKey() {
+  const key = document.getElementById('cfgApiKey').value.trim();
+  if (!key) return;
+  localStorage.setItem('gemini_api_key', key);
+  document.getElementById('cfgSaved').style.display = 'inline';
+  actualizarBadge(key);
+  checkReady();
+  setTimeout(() => document.getElementById('cfgPanel').classList.remove('open'), 1200);
+}
+function actualizarBadge(key) {
+  const badge = document.getElementById('apiStatus');
+  const warn  = document.getElementById('apiWarning');
+  if (key) {
+    badge.textContent = '✅ API Key configurada';
+    badge.style.background = '#E2EFDA';
+    badge.style.color = '#1a5e20';
+    if (warn) warn.style.display = 'none';
+  } else {
+    badge.textContent = '🔑 API Key no configurada';
+    badge.style.background = '#FFF2CC';
+    badge.style.color = '#7B6000';
+    if (warn) warn.style.display = 'block';
+  }
+}
+// Al cargar la página, restaurar API Key guardada
+window.addEventListener('load', () => {
+  const saved = localStorage.getItem('gemini_api_key') || '';
+  actualizarBadge(saved);
+  checkReady();
+});
 
 function switchTab(t) {
   modo = t;
@@ -513,13 +570,15 @@ function renderBatchList() {
 }
 
 function getApiKey() {
-  const inp = document.getElementById('apiKeyInput');
-  return inp ? inp.value.trim() : '';
+  if (API_KEY_ENV) return '';  // el servidor usa la variable de entorno
+  return localStorage.getItem('gemini_api_key') || '';
 }
 
 function checkReady() {
   const tieneArchivos = modo==='single' ? !!archivoSingle : archivosBatch.length > 0;
-  const tieneKey = API_KEY_ENV ? (getApiKey().startsWith('AIza') || getApiKey().length > 20) : true;
+  const tieneKey = API_KEY_ENV || getApiKey().length > 20;
+  const warn = document.getElementById('apiWarning');
+  if (warn) warn.style.display = (!tieneKey) ? 'block' : 'none';
   document.getElementById('btnAnalizar').disabled = !(tieneArchivos && tieneKey);
 }
 
