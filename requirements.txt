@@ -11,6 +11,7 @@
 
 # ── Interfaz web (para app_web.py) ────────────────────────
 flask>=3.0.0
+gunicorn>=21.2.0
 
 # ── API de Anthropic (Claude) ──────────────────────────────
 anthropic>=0.34.0
