@@ -273,7 +273,7 @@ def guardar_csv_lote(resultados, ts):
 
 # ── HTML ──────────────────────────────────────────────────────────────────────
 def html_principal(api_key_preconfigurada):
-    mostrar_api = "false" if api_key_preconfigurada else "true"
+    mostrar_api = "true" if api_key_preconfigurada else "false"
     return """<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -475,28 +475,45 @@ let modo = 'single';
 let archivoSingle = null;
 let archivosBatch = [];
 
-// ── Config: guardar/leer API Key en localStorage ───────────────────────────
+// ── Config: guardar/leer API Key en sesión del servidor ─────────────────────
+let apiKeyConfigurada = false;  // estado local que refleja si el servidor tiene la key
+
 function toggleConfig() {
   const panel = document.getElementById('cfgPanel');
   panel.classList.toggle('open');
+  // No pre-llenamos el campo por seguridad; el usuario pega su key de nuevo si quiere cambiarla
   if (panel.classList.contains('open')) {
-    const saved = localStorage.getItem('gemini_api_key') || '';
-    document.getElementById('cfgApiKey').value = saved;
+    document.getElementById('cfgApiKey').value = '';
+    document.getElementById('cfgSaved').style.display = 'none';
   }
 }
-function guardarApiKey() {
+async function guardarApiKey() {
   const key = document.getElementById('cfgApiKey').value.trim();
-  if (!key) return;
-  localStorage.setItem('gemini_api_key', key);
-  document.getElementById('cfgSaved').style.display = 'inline';
-  actualizarBadge(key);
-  checkReady();
-  setTimeout(() => document.getElementById('cfgPanel').classList.remove('open'), 1200);
+  if (!key) { alert('Pega tu API Key primero.'); return; }
+  try {
+    const res = await fetch('/guardar-api-key', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({api_key: key})
+    });
+    const data = await res.json();
+    if (data.ok) {
+      apiKeyConfigurada = true;
+      document.getElementById('cfgSaved').style.display = 'inline';
+      actualizarBadge(true);
+      checkReady();
+      setTimeout(() => document.getElementById('cfgPanel').classList.remove('open'), 1200);
+    } else {
+      alert('Error al guardar: ' + (data.error || 'Desconocido'));
+    }
+  } catch(e) {
+    alert('Error de conexión al guardar API Key: ' + e.message);
+  }
 }
-function actualizarBadge(key) {
+function actualizarBadge(tiene) {
   const badge = document.getElementById('apiStatus');
   const warn  = document.getElementById('apiWarning');
-  if (key) {
+  if (tiene) {
     badge.textContent = '✅ API Key configurada';
     badge.style.background = '#E2EFDA';
     badge.style.color = '#1a5e20';
@@ -508,10 +525,22 @@ function actualizarBadge(key) {
     if (warn) warn.style.display = 'block';
   }
 }
-// Al cargar la página, restaurar API Key guardada
-window.addEventListener('load', () => {
-  const saved = localStorage.getItem('gemini_api_key') || '';
-  actualizarBadge(saved);
+// Al cargar la página, verificar si el servidor ya tiene una API Key guardada
+window.addEventListener('load', async () => {
+  if (API_KEY_ENV) {
+    apiKeyConfigurada = true;
+    actualizarBadge(true);
+  } else {
+    try {
+      const res = await fetch('/verificar-api-key');
+      const data = await res.json();
+      apiKeyConfigurada = data.configurada;
+      actualizarBadge(apiKeyConfigurada);
+    } catch(e) {
+      apiKeyConfigurada = false;
+      actualizarBadge(false);
+    }
+  }
   checkReady();
 });
 
@@ -569,14 +598,9 @@ function renderBatchList() {
   ).join('');
 }
 
-function getApiKey() {
-  if (API_KEY_ENV) return '';  // el servidor usa la variable de entorno
-  return localStorage.getItem('gemini_api_key') || '';
-}
-
 function checkReady() {
   const tieneArchivos = modo==='single' ? !!archivoSingle : archivosBatch.length > 0;
-  const tieneKey = API_KEY_ENV || getApiKey().length > 20;
+  const tieneKey = API_KEY_ENV || apiKeyConfigurada;
   const warn = document.getElementById('apiWarning');
   if (warn) warn.style.display = (!tieneKey) ? 'block' : 'none';
   document.getElementById('btnAnalizar').disabled = !(tieneArchivos && tieneKey);
@@ -609,7 +633,6 @@ async function analizarSingle() {
   try {
     const fd = new FormData();
     fd.append('file', archivoSingle);
-    if (!API_KEY_ENV) fd.append('api_key', getApiKey());
     const res = await fetch('/analizar', {method:'POST',body:fd});
     const data = await res.json();
     clearInterval(tick); setProgress(100,'✅ ¡Listo!');
@@ -637,7 +660,6 @@ async function analizarLote() {
     try {
       const fd = new FormData();
       fd.append('file', f);
-      if (!API_KEY_ENV) fd.append('api_key', getApiKey());
       const res = await fetch('/analizar', {method:'POST',body:fd});
       const data = await res.json();
       if (data.error) { resultados.push({nombre:f.name,ok:false,error:data.error}); fallidos++; }
@@ -649,7 +671,6 @@ async function analizarLote() {
   try {
     const fd2 = new FormData();
     fd2.append('resultados', JSON.stringify(resultados.filter(r=>r.ok)));
-    if (!API_KEY_ENV) fd2.append('api_key', getApiKey());
     const res2 = await fetch('/consolidar', {method:'POST',body:fd2});
     const data2 = await res2.json();
     setProgress(100,'✅ ¡Lote completo!', `${exitosos} exitosos · ${fallidos} con error`);
@@ -741,6 +762,24 @@ def login():
 def logout():
     session.clear(); return redirect(url_for("login"))
 
+@app.route("/guardar-api-key", methods=["POST"])
+@login_required
+def guardar_api_key():
+    """Guarda la API Key en la sesión del servidor — no depende del navegador."""
+    data = request.get_json(silent=True) or {}
+    key = data.get("api_key","").strip()
+    if not key:
+        return jsonify({"ok":False,"error":"La API Key está vacía."}), 400
+    session["gemini_api_key"] = key
+    return jsonify({"ok":True})
+
+@app.route("/verificar-api-key")
+@login_required
+def verificar_api_key():
+    """Verifica si hay una API Key guardada en la sesión."""
+    tiene = bool(API_KEY_ENV or session.get("gemini_api_key"))
+    return jsonify({"configurada": tiene})
+
 @app.route("/")
 @login_required
 def index():
@@ -750,9 +789,10 @@ def index():
 @login_required
 def analizar_endpoint():
     try:
-        api_key = API_KEY_ENV or request.form.get("api_key","").strip()
+        # Buscar API Key: 1) env var del servidor, 2) sesión Flask, 3) form del request
+        api_key = API_KEY_ENV or session.get("gemini_api_key","") or request.form.get("api_key","").strip()
         if not api_key:
-            return jsonify({"error":"Ingresa tu API Key de Google Gemini para continuar."}), 400
+            return jsonify({"error":"Configura tu API Key con el botón ⚙️ Configuración antes de analizar."}), 400
         f = request.files.get("file")
         if not f:
             return jsonify({"error":"No se recibió ningún archivo."}), 400
