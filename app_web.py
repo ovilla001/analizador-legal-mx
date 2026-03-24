@@ -667,20 +667,31 @@ async function analizarLote() {
     } catch(e) { resultados.push({nombre:f.name,ok:false,error:e.message}); fallidos++; }
   }
 
-  setProgress(95,'📊 Generando Registro Maestro consolidado...');
-  try {
-    const fd2 = new FormData();
-    fd2.append('resultados', JSON.stringify(resultados.filter(r=>r.ok)));
-    const res2 = await fetch('/consolidar', {method:'POST',body:fd2});
-    const data2 = await res2.json();
-    setProgress(100,'✅ ¡Lote completo!', `${exitosos} exitosos · ${fallidos} con error`);
-    renderResumenLote(resultados);
-    if (data2.excel_url) {
-      document.getElementById('dlExcel').href = data2.excel_url;
-      document.getElementById('dlCsv').href   = data2.csv_url;
-      document.getElementById('dlBar').style.display = 'flex';
-    }
-  } catch(e) { setProgress(100,'⚠️ Error al consolidar',''); showAlert('error','❌ '+e.message); }
+  renderResumenLote(resultados);
+
+  // Solo consolidar si hubo al menos un archivo exitoso
+  if (exitosos > 0) {
+    setProgress(95,'📊 Generando Registro Maestro consolidado...');
+    try {
+      const fd2 = new FormData();
+      fd2.append('resultados', JSON.stringify(resultados.filter(r=>r.ok)));
+      const res2 = await fetch('/consolidar', {method:'POST',body:fd2});
+      if (!res2.ok) {
+        const errData = await res2.json().catch(() => ({error:'Respuesta inválida del servidor'}));
+        throw new Error(errData.error || 'Error HTTP ' + res2.status);
+      }
+      const data2 = await res2.json();
+      setProgress(100,'✅ ¡Lote completo!', `${exitosos} exitosos · ${fallidos} con error`);
+      if (data2.excel_url) {
+        document.getElementById('dlExcel').href = data2.excel_url;
+        document.getElementById('dlCsv').href   = data2.csv_url;
+        document.getElementById('dlBar').style.display = 'flex';
+      }
+    } catch(e) { setProgress(100,'⚠️ Error al consolidar',''); showAlert('error','❌ '+e.message); }
+  } else {
+    setProgress(100,'⚠️ Ningún archivo se procesó correctamente', `${fallidos} con error`);
+    showAlert('error','❌ Todos los archivos fallaron. Revisa los errores en el resumen.');
+  }
   document.getElementById('resultArea').style.display = 'block';
 }
 
