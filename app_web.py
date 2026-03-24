@@ -50,7 +50,7 @@ app            = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "analizador-legal-mx-clave-secreta-2024")
 UPLOAD_DIR     = Path("uploads_web"); UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR     = Path("resultados_legales"); OUTPUT_DIR.mkdir(exist_ok=True)
-MAX_PAGINAS    = 30
+MAX_PAGINAS    = 20
 MODELO         = "gemini-2.0-flash"
 APP_PASSWORD   = os.environ.get("APP_PASSWORD", "")
 API_KEY_ENV    = os.environ.get("GEMINI_API_KEY", "")   # Si está, se oculta el campo en la web
@@ -104,15 +104,22 @@ def extraer_texto_pdf(ruta):
 
 def pdf_a_imagenes(ruta):
     if not PDF2IMAGE_OK: return []
-    paginas = convert_from_path(str(ruta), dpi=200, first_page=1, last_page=MAX_PAGINAS)
+    # DPI 100 en lugar de 200: 4x menos memoria, aún legible para Gemini
+    paginas = convert_from_path(str(ruta), dpi=100, first_page=1, last_page=MAX_PAGINAS)
     imgs = []
     for i, p in enumerate(paginas):
-        tmp = UPLOAD_DIR / f"_tmp_{i}.png"
-        p.save(str(tmp), "PNG")
+        # Redimensionar si es muy grande (máx 1200px de ancho)
+        if p.width > 1200:
+            ratio = 1200 / p.width
+            p = p.resize((1200, int(p.height * ratio)))
+        tmp = UPLOAD_DIR / f"_tmp_{i}.jpg"
+        # JPEG en lugar de PNG: ~5x menos peso en disco y memoria
+        p.save(str(tmp), "JPEG", quality=75)
         with open(tmp, "rb") as f:
             data = f.read()
-        imgs.append({"mime_type": "image/png", "data": base64.b64encode(data).decode()})
+        imgs.append({"mime_type": "image/jpeg", "data": base64.b64encode(data).decode()})
         tmp.unlink(missing_ok=True)
+        del p  # liberar memoria de la imagen inmediatamente
     return imgs
 
 def extraer_texto_docx(ruta):
