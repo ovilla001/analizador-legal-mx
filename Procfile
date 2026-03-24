@@ -1,1 +1,1 @@
-web: python app_web.py
+web: gunicorn app_web:app --bind 0.0.0.0:$PORT --workers 1 --timeout 300 --preload

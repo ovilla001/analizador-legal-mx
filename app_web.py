@@ -663,7 +663,13 @@ async function analizarLote() {
       const fd = new FormData();
       fd.append('file', f);
       const res = await fetch('/analizar', {method:'POST',body:fd});
-      const data = await res.json();
+      const text = await res.text();
+      if (!text || text.trim() === '') {
+        throw new Error(`Sin respuesta del servidor (HTTP ${res.status}) — posible timeout. Intenta con un archivo a la vez.`);
+      }
+      let data;
+      try { data = JSON.parse(text); }
+      catch(je) { throw new Error(`HTTP ${res.status}: ${text.substring(0,150)}`); }
       if (data.error) { resultados.push({nombre:f.name,ok:false,error:data.error}); fallidos++; }
       else { resultados.push({nombre:f.name,ok:true,tipo:data.tipo,filas:data.filas}); exitosos++; }
     } catch(e) { resultados.push({nombre:f.name,ok:false,error:e.message}); fallidos++; }
