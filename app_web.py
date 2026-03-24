@@ -796,8 +796,12 @@ def analizar_endpoint():
         f = request.files.get("file")
         if not f:
             return jsonify({"error":"No se recibió ningún archivo."}), 400
-        nombre = f.filename
+        # Cuando se sube una carpeta, el navegador envía rutas como "Subcarpeta/archivo.pdf"
+        # Usamos solo el nombre final del archivo para evitar errores de directorio
+        nombre_original = f.filename  # puede incluir ruta: "Constitutiva/10,440.pdf"
+        nombre = Path(nombre_original).name  # solo "10,440.pdf"
         ruta   = UPLOAD_DIR / nombre
+        ruta.parent.mkdir(parents=True, exist_ok=True)
         f.save(str(ruta))
         filas, tipo = procesar_archivo(ruta, api_key)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
