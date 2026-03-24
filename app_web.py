@@ -45,7 +45,9 @@ if FALTANTES:
 
 # ── Config ────────────────────────────────────────────────────────────────────
 app            = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
+# Clave fija para que todos los workers de gunicorn compartan sesiones.
+# En producción, configura la variable SECRET_KEY en Render.
+app.secret_key = os.environ.get("SECRET_KEY", "analizador-legal-mx-clave-secreta-2024")
 UPLOAD_DIR     = Path("uploads_web"); UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR     = Path("resultados_legales"); OUTPUT_DIR.mkdir(exist_ok=True)
 MAX_PAGINAS    = 30
